@@ -616,4 +616,194 @@ def create_visualizations(output_csv):
             plt.tight_layout()
             plt.savefig('team_cgpa_balance_by_tg_SAMPLE.png')
             plt.close()
-            print("Saved chart 'team_cgpa_balance_by
+            print("Saved chart 'team_cgpa_balance_by_tg_SAMPLE.png'")
+        else:
+            print("Skipping plot: No teams to sample.")
+    else:
+        print("Skipping plot: No data found.")
+
+    
+    # --- Plot 3: Team Composition by Tutorial Group (Faculty-Gender 100% Stacked Bar) ---
+        # File name is known
+    file_name = "teams_assigned_final.csv"
+    
+    # --- Data Aggregation and Filtering ---
+    
+    # 1. Read all data and identify unique tutorial groups
+    all_data = []
+    all_tutorial_groups = set()
+    try:
+        with open(file_name, mode='r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                all_data.append(row)
+                all_tutorial_groups.add(row['Tutorial Group'])
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        
+    # 2. Select 5 random tutorial groups
+    num_groups_to_select = 5
+    # Note: sorted() is used to ensure random.sample takes a sequence
+    selected_groups = random.sample(sorted(list(all_tutorial_groups)), min(num_groups_to_select, len(all_tutorial_groups)))
+    
+    # 3. Filter the data and aggregate counts for the selected groups
+    filtered_data = [row for row in all_data if row['Tutorial Group'] in selected_groups]
+    
+    gender_counts = {}
+    school_counts = {}
+    
+    for row in filtered_data:
+        team = row['Team Assigned']
+        gender = row['Gender']
+        school = row['School']
+        
+        # Aggregate Gender Counts
+        if team not in gender_counts:
+            # Initialize counts for the team
+            gender_counts[team] = {'Male': 0, 'Female': 0, 'Other': 0}
+        if gender in gender_counts[team]:
+            gender_counts[team][gender] += 1
+        else:
+            gender_counts[team]['Other'] += 1
+    
+        # Aggregate School Counts
+        if team not in school_counts:
+            school_counts[team] = {}
+        school_counts[team][school] = school_counts[team].get(school, 0) + 1
+    
+    # --- Visualization 1: Gender Distribution ---
+    
+    gender_plot_file = 'random_5_groups_gender_distribution.png'
+    if gender_counts:
+        teams = list(gender_counts.keys())
+        teams.sort()
+        
+        males = [gender_counts[t].get('Male', 0) for t in teams]
+        females = [gender_counts[t].get('Female', 0) for t in teams]
+        
+        plt.figure(figsize=(12, 6))
+        x = range(len(teams))
+        
+        plt.bar(x, males, label='Male', color='#377eb8')
+        plt.bar(x, females, bottom=males, label='Female', color='#e41a1c')
+        
+        plt.ylabel('Number of Students')
+        plt.xlabel('Assigned Team (Within Randomly Selected Groups)')
+        plt.title(f'Gender Distribution in Randomly Selected Tutorial Groups: {", ".join(selected_groups)}')
+        plt.xticks(x, teams, rotation=90)
+        plt.legend(title='Gender')
+        plt.tight_layout()
+        plt.show() # Note: In the actual script, this is replaced by savefig
+        plt.close()
+    
+    # --- Visualization 2: School/Faculty Distribution (Top 10) ---
+    
+    school_plot_file = 'random_5_groups_school_distribution.png'
+    if school_counts:
+        all_schools = set()
+        for counts in school_counts.values():
+            all_schools.update(counts.keys())
+        
+        teams = list(school_counts.keys())
+        teams.sort()
+        
+        school_data = {school: [] for school in all_schools}
+        for team in teams:
+            for school in all_schools:
+                school_data[school].append(school_counts[team].get(school, 0))
+    
+        # Identify top schools among the selected groups for readability
+        school_totals = {school: sum(school_data[school]) for school in all_schools}
+        top_schools = sorted(school_totals, key=school_totals.get, reverse=True)[:10]
+        plot_school_data = {school: school_data[school] for school in top_schools}
+    
+        plt.figure(figsize=(15, 8))
+        bottoms = [0] * len(teams)
+        colors = plt.cm.get_cmap('tab20', len(top_schools))
+    
+        x = range(len(teams))
+        
+        for i, school in enumerate(top_schools):
+            counts = plot_school_data[school]
+            plt.bar(x, counts, bottom=bottoms, label=school, color=colors(i))
+            bottoms = [bottoms[j] + counts[j] for j in range(len(teams))]
+        plt.ylabel('Number of Students')
+        plt.xlabel('Assigned Team (Within Randomly Selected Groups)')
+        plt.title(f'School/Faculty Distribution in Randomly Selected Tutorial Groups: {", ".join(selected_groups)}')
+        plt.xticks(x, teams, rotation=90)
+        plt.legend(title='School/Faculty', bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout(rect=[0, 0, 0.85, 1])
+        plt.show() # Note: In the actual script, this is replaced by savefig
+        plt.close()
+            
+    # --- End of Plot 3 ---
+
+
+# --- Main Program Entry Point ---
+if __name__ == "__main__":
+    # Define input and output files.
+    INPUT_FILE = "records.csv"
+    OUTPUT_FILE = "teams_assigned_final.csv"
+
+    # --- Get User Input ---
+    user_team_size = 0
+    while True:
+        try:
+            raw_input = input("Please enter the number of members per team (Recommended 4-10, press Enter for default 5): ")
+            if not raw_input:
+                user_team_size = 5
+                print("No input detected, using default value: 5 members/team.")
+                break
+            user_team_size = int(raw_input)
+            # Add validation checks.
+            if user_team_size < 2 or user_team_size > TUTORIAL_GROUP_SIZE:
+                print(f"Error: Invalid input. Team size must be between 2 and {TUTORIAL_GROUP_SIZE}. Please try again.")
+                continue
+            break
+        except ValueError:
+            print("Error: Please enter a valid integer. Please try again.")
+
+    # ==================== Dynamic Iteration Calculation ====================
+    # This is the "smart" part of the script. It calculates the number of
+    # optimization iterations based on the *combinatorial complexity* of
+    # the problem, which is defined by the user's chosen team size.
+    
+    # 1. How many teams will be in each batch?
+    num_teams_per_group = TUTORIAL_GROUP_SIZE // user_team_size
+    
+    if num_teams_per_group < 2:
+        # Not enough teams to optimize (can't swap).
+        dynamic_iterations = 0  
+    else: 
+       # 2. How many unique *pairs* of teams are there? 
+       # This is the "N choose 2" formula: (N * (N-1)) / 2 
+       num_team_pairs = (num_teams_per_group * (num_teams_per_group - 1)) // 2 
+        
+       # 3. How many possible 1-for-1 swaps are there *between* any two teams? 
+       # (team_size * team_size) 
+       swaps_per_pair = user_team_size * user_team_size 
+        
+       # 4. What is the *total* number of possible swaps in the search space? 
+       total_complexity = num_team_pairs * swaps_per_pair 
+        
+       # 5. Scale this by our ALPHA to get the final iteration count. 
+       # This auto-tunes the optimizer: 
+       # - Small team size (e.g., 4) -> 12 teams/group -> fewer iterations needed. 
+       # - Large team size (e.g., 10) -> 5 teams/group -> more iterations needed. 
+       dynamic_iterations = int(total_complexity * EXPLORATION_ALPHA) 
+   # ======================================================================= 
+
+print(f"\nSetup successful! Grouping will proceed with {user_team_size} members/team.") 
+print(f"Based on the problem complexity ({num_teams_per_group} teams/group) and exploration factor (Alpha={EXPLORATION_ALPHA}),") 
+print(f"the optimization process will run for {dynamic_iterations} iterations.") 
+
+   # --- Execute all steps in order --- 
+    
+   # Pass the user-inputted user_team_size and calculated dynamic_iterations 
+   # to the main controller function. 
+form_teams(INPUT_FILE, OUTPUT_FILE, team_size=user_team_size, max_iterations=dynamic_iterations) 
+    
+   # Run the reporting functions on the final output file. 
+summarise(OUTPUT_FILE) 
+
+create_visualizations(OUTPUT_FILE)
