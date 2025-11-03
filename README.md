@@ -607,7 +607,102 @@ def create_visualizations(output_csv):
     else:
         print("Skipping plot: No data found.")
 
+    # --- Plot 3: Team Composition by Tutorial Group (Faculty-Gender 100% Stacked Bar) ---
+    # Group by tutorial group and team
+    tg_team_data = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    
+    for record in records:
+        tg = record['Tutorial Group']
+        team = record['Team Assigned']
+        school = record['School']
+        gender = record['Gender']
+        # Create combined category: School_Gender (e.g., "Engineering_Male")
+        category = f"{school}_{gender}"
+        tg_team_data[tg][team][category] += 1
+    
+    # Get all unique categories across all teams
+    all_categories = set()
+    for tg in tg_team_data.values():
+        for team in tg.values():
+            all_categories.update(team.keys())
+    
+    all_categories = sorted(all_categories)
+    
+    # Create color map for categories
+    # Use different colors for different schools, shades for gender
+    schools = sorted(set(cat.split('_')[0] for cat in all_categories))
+    base_colors = plt.cm.Set3(range(len(schools)))
+    
+    color_map = {}
+    for i, school in enumerate(schools):
+        # Darker shade for Male, lighter for Female
+        male_cat = f"{school}_Male"
+        female_cat = f"{school}_Female"
+        if male_cat in all_categories:
+            color_map[male_cat] = base_colors[i]
+        if female_cat in all_categories:
+            # Lighter version of the same color
+            color_map[female_cat] = tuple(list(base_colors[i][:3]) + [0.5])
+    
+    # Create one subplot per tutorial group
+    tg_names = sorted(tg_team_data.keys())
+    n_tgs = len(tg_names)
+    
+    if n_tgs == 0:
+        print("No tutorial groups found for visualization.")
+        return
+    
+    fig, axes = plt.subplots(n_tgs, 1, figsize=(14, 5 * n_tgs))
+    if n_tgs == 1:
+        axes = [axes]  # Make it iterable
+    
+    for ax_idx, tg_name in enumerate(tg_names):
+        ax = axes[ax_idx]
+        teams_dict = tg_team_data[tg_name]
+        team_names = sorted(teams_dict.keys())
         
+        # Calculate percentages for each team
+        team_sizes = []
+        team_percentages = defaultdict(list)
+        
+        for team_name in team_names:
+            team_data = teams_dict[team_name]
+            total = sum(team_data.values())
+            team_sizes.append(total)
+            
+            for category in all_categories:
+                count = team_data.get(category, 0)
+                percentage = (count / total * 100) if total > 0 else 0
+                team_percentages[category].append(percentage)
+        
+        # Create stacked bars
+        bar_width = 0.7
+        indices = range(len(team_names))
+        bottom = [0] * len(team_names)
+        
+        for category in all_categories:
+            percentages = team_percentages[category]
+            color = color_map.get(category, 'gray')
+            ax.bar(indices, percentages, bar_width, bottom=bottom, 
+                   label=category.replace('_', ' '), color=color)
+            bottom = [bottom[i] + percentages[i] for i in range(len(team_names))]
+        
+        # Add team size labels above bars
+        for i, size in enumerate(team_sizes):
+            ax.text(i, 102, f'n={size}', ha='center', va='bottom', fontsize=8)
+        
+        ax.set_ylabel('Percentage (%)', fontweight='bold')
+        ax.set_title(f'{tg_name}: Team Composition (Faculty & Gender)', fontweight='bold', fontsize=12)
+        ax.set_xticks(indices)
+        ax.set_xticklabels(team_names, rotation=45, ha='right', fontsize=8)
+        ax.set_ylim(0, 110)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+        ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('team_composition_by_tg.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    print("Saved chart 'team_composition_by_gender_faculty.png'")
 
 # --- Main Program Entry Point ---
 if __name__ == "__main__":
